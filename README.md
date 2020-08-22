@@ -1,2 +1,3 @@
 # DeepL
-Current Miniprojects dealing with deep learning algorithms.
+Working DCGAN implemented in keras. 
+Starting point: https://www.tensorflow.org/tutorials/generative/dcgan
