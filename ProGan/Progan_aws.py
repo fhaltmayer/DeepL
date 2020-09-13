@@ -17,7 +17,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from IPython.display import HTML
-from apex import amp
+#from apex import amp
 import time
 from copy import deepcopy
 import glob
@@ -27,7 +27,7 @@ manualSeed = 999
 random.seed(manualSeed)
 torch.manual_seed(manualSeed)
 
-dataroot = "/Data/Celeba/CelebAMask-HQ"
+dataroot = "/Data/CelebA/"
 
 save_directory = "/Data/Training/Saved_Models/"
 
@@ -905,11 +905,11 @@ def main(argv):
     arg = int(argv[0])
     if arg > 0:
         size = 16
-        if argv == 256:
+        if arg == 256:
             size = 14
-        elif argv == 512:
+        elif arg == 512:
             size = 6
-        elif argv == 1024:
+        elif arg == 1024:
             size = 3
         print(argv[0])
         fixed_noise = torch.randn(16, nz, device=device)
