@@ -27,22 +27,22 @@ manualSeed = 999
 random.seed(manualSeed)
 torch.manual_seed(manualSeed)
 
-# dataroot = "/Data/CelebA/"
+dataroot = "/Data/CelebA/"
 
-# save_directory = "/Data/Training/Saved_Models/"
+save_directory = "/Data/Training/Saved_Models/"
 
-# log_directory = "/Data/Training/"
+log_directory = "/Data/Training/"
 
-# img_directory = "/Data/Training/Saved_Imgs/"
+img_directory = "/Data/Training/Saved_Imgs/"
 
 
-dataroot = "/media/fico/Data/Celeba/CelebAMask-HQ"
+# dataroot = "/media/fico/Data/Celeba/CelebAMask-HQ"
 
-save_directory = "./Training/Saved_Models/"
+# save_directory = "./Training/Saved_Models/"
 
-log_directory = "./Training/"
+# log_directory = "./Training/"
 
-img_directory = "./Training/Saved_Imgs/"
+# img_directory = "./Training/Saved_Imgs/"
 
 workers = 4
 
@@ -62,9 +62,9 @@ img_batch_size = [(4,16),(8,16),(16,16),(32,16),(64,16),(128,16), (256, 14), (51
 
 betas = (0, 0.99)
 
-steps = 8000
+steps = 800000
 
-save_count = 1000
+save_count = 100000
 
 small_penalty_e = .001
 
