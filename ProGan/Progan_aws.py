@@ -27,13 +27,22 @@ manualSeed = 999
 random.seed(manualSeed)
 torch.manual_seed(manualSeed)
 
-dataroot = "/Data/CelebA/"
+# dataroot = "/Data/CelebA/"
 
-save_directory = "/Data/Training/Saved_Models/"
+# save_directory = "/Data/Training/Saved_Models/"
 
-log_directory = "/Data/Training/"
+# log_directory = "/Data/Training/"
 
-img_directory = "/Data/Training/Saved_Imgs/"
+# img_directory = "/Data/Training/Saved_Imgs/"
+
+
+dataroot = "/media/fico/Data/Celeba/CelebAMask-HQ"
+
+save_directory = "./Training/Saved_Models/"
+
+log_directory = "./Training/"
+
+img_directory = "./Training/Saved_Imgs/"
 
 workers = 4
 
@@ -53,7 +62,9 @@ img_batch_size = [(4,16),(8,16),(16,16),(32,16),(64,16),(128,16), (256, 14), (51
 
 betas = (0, 0.99)
 
-steps = 800000
+steps = 8000
+
+save_count = 1000
 
 small_penalty_e = .001
 
@@ -580,7 +591,7 @@ def load_data():
         dataload = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
                                         shuffle=True, num_workers=workers, drop_last=True)
         data_loaders.append(dataload)
-    print("Data Loaded")
+    # print("Data Loaded")
     return data_loaders
 
 # https://discuss.pytorch.org/t/copy-weights-only-from-a-networks-parameters/5841
@@ -612,6 +623,7 @@ def startup(load_train, mixed_precision):
     res = 4
     fade_in = False
     epoch = 0
+    count = 0
     
     if load_train:
     
@@ -651,10 +663,17 @@ def startup(load_train, mixed_precision):
             current_data = checkD['next_dict']
             fade_in = checkD['next_fade']
             fixed_noise = checkG['fixednoise']
+            count = checkD['count']
+            with open(log_directory + "log.txt","a+") as f:
+                print(file=f)
+                print("Loaded with epoch: " + str(epoch) + " and count: " + str(count), file=f)
         except:
-            pass
+            with open(log_directory + "log.txt","a+") as f:
+                print(file=f)
+                print("Starting new with epoch: " + str(epoch) + " and count: " + str(count), file=f)
 
-    return [netD, netG, netG_copy, optimizerD, optimizerG, scalerD, scalerG, epoch, res, current_data, fade_in, fixed_noise, training]
+
+    return [netD, netG, netG_copy, optimizerD, optimizerG, scalerD, scalerG, epoch, res, current_data, fade_in, fixed_noise, training, count]
 
 def gradient_penalty(netD, netG, mini_batch, real_imgs, fake_imgs, alpha, res, mixed_precision):
     gp_alpha = torch.randn(mini_batch, 1, 1, 1, device = device)
@@ -694,7 +713,6 @@ def logging(epoch, res, fade_in, count, alpha, loss_D, loss_G, netG_copy, fixed_
     with open(log_directory + "log.txt","a+") as f:
         print("Res:", res, "Fade_in:", fade_in, "Iter:",count, "alpha:", alpha, file=f)
         print("W with GP:", loss_D.item(),  "Loss G:", loss_G.item(), file=f)
-        print(file=f)
     print("Res:", res, "Fade_in:", fade_in, "Iter:",count, "alpha:", alpha)
     print("W with GP:", loss_D.item(),  "Loss G:", loss_G.item())
     print()
@@ -723,7 +741,7 @@ def logging(epoch, res, fade_in, count, alpha, loss_D, loss_G, netG_copy, fixed_
         plt.savefig(path, dpi=300)
         plt.close('all')
 
-def save_models(epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision):
+def save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision):
     if not mixed_precision:
         
         pathD = save_directory + "Regular/" + "D/" + "next_res:" + str(res) + "next_fade:" + str(fade_in)
@@ -736,6 +754,7 @@ def save_models(epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_
             'next_fade': fade_in,
             'model_state_dict': netD.state_dict(),
             'optimizer_state_dict': optimizerD.state_dict(),
+            'count': count,
             }, pathD)
 
         torch.save({
@@ -759,6 +778,7 @@ def save_models(epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_
             'model_state_dict': netD.state_dict(),
             'optimizer_state_dict': optimizerD.state_dict(),
             'scaler_state_dict': scalerD.state_dict(),
+            'count': count,
 #                 'amp': amp.state_dict(),
             }, pathD)
 
@@ -769,6 +789,8 @@ def save_models(epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_
             'scaler_state_dict': scalerG.state_dict()
 
             }, pathG)
+    with open(log_directory + "log.txt","a+") as f:
+        print("Saved with epoch: " + str(epoch) + " and count: " + str(count), file=f)
 
 def check_directories():
     if not os.path.exists(save_directory + "Regular/D/"):
@@ -786,8 +808,8 @@ def check_directories():
 
 def training(load_train = False, mixed_precision = False):
     with open(log_directory + "log.txt","a+") as f:
-        print("Loaded Models", file=f)
-        print(file=f)
+        # print("Loaded Models", file=f)
+        # print(file=f)
         values = startup(load_train, mixed_precision)
         netD = values[0]
         netG = values[1]
@@ -802,13 +824,13 @@ def training(load_train = False, mixed_precision = False):
         fade_in = values[10]
         fixed_noise = values[11]
         training = values[12]
-        data_loaders = load_data()
+        count = values[13]
 
-        print("Starting Training", file=f)
+        data_loaders = load_data()
+        
     while(training):
 
         loader = iter(data_loaders[current_data])
-        count = 0
      
         start_time = time.time()
         
@@ -880,8 +902,11 @@ def training(load_train = False, mixed_precision = False):
 #             Training Stats
                 
             count += mini_batch
-            if count %5000 <= mini_batch:
+            if count %5000 < mini_batch:
                 logging(epoch, res, fade_in, count, alpha, loss_D, loss_G, netG_copy, fixed_noise, mixed_precision)
+            if count%save_count < mini_batch:
+                save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision)
+
 
         if fade_in == False:
             fade_in = True
@@ -892,9 +917,10 @@ def training(load_train = False, mixed_precision = False):
         else:
             fade_in = False
         epoch += 1 
-       
+        
+        count = 0
     
-        save_models(epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision)
+        save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision)
 
     
         end_time = time.time()
