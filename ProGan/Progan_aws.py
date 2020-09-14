@@ -951,9 +951,12 @@ def main(argv):
         print("success")
         return 0
     
-    else:
+    elif arg < 0:
         check_directories()
         training(load_train = True, mixed_precision=False)
+    
+    else:
+        check_directories()
 
 
 
