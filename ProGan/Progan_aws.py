@@ -915,8 +915,12 @@ def training(load_train = False, mixed_precision = False):
             count += mini_batch
             if count %5000 < mini_batch:
                 logging(epoch, res, fade_in, count, alpha, loss_D, loss_G, netG_copy, fixed_noise, mixed_precision)
-            if count%save_count < mini_batch:
-                save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision)
+            if res < =64:
+                if count%save_count < mini_batch:
+                    save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision)
+            else:
+                if count%(save_count//2) < mini_batch:
+                    save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision)
 
 
         if fade_in == False:
