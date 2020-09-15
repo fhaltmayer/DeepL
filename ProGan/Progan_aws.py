@@ -22,6 +22,8 @@ import time
 from copy import deepcopy
 import glob
 # import logging
+import re
+
 
 manualSeed = 999
 random.seed(manualSeed)
@@ -604,8 +606,13 @@ def update_running_avg(original, copy):
             if name1 in dict_params2:
                 dict_params2[name1].data.copy_((1 - .999) * dict_params2[name1] + (.999) * param1.data)
 
+
 def startup(load_train, mixed_precision):
-    
+    def extract_number(f):
+        s = re.findall("\d+",f)
+        print(''.join(s))
+        return (int(''.join(s)) if s else -1,f)
+
     netG = Generator(ngpu).to(device)
     netD = Discriminator(ngpu).to(device)
     netG_copy = deepcopy(netG)
@@ -635,11 +642,11 @@ def startup(load_train, mixed_precision):
             pathG = save_directory + "Amp/" + "G/"
         try:  
             list_of_files = glob.glob(pathD + '*') # * means all if need specific format then *.csv
-            latest_file = max(list_of_files)
+            latest_file = max(list_of_files,key=extract_number)
             checkD = torch.load(latest_file)
 
             list_of_files = glob.glob(pathG + '*') # * means all if need specific format then *.csv
-            latest_file = max(list_of_files)
+            latest_file = max(list_of_files,key=extract_number)
             checkG = torch.load(latest_file)
 
             optimizerD.load_state_dict(checkD['optimizer_state_dict'])
@@ -742,10 +749,14 @@ def logging(epoch, res, fade_in, count, alpha, loss_D, loss_G, netG_copy, fixed_
         plt.close('all')
 
 def save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision):
+    if fade_in == True:
+        tempF = 0
+    else:
+        tempF = 1
+
     if not mixed_precision:
-        
-        pathD = save_directory + "Regular/" + "D/" + "next_res:" + str(res) + "next_fade:" + str(fade_in)
-        pathG = save_directory + "Regular/" + "G/" + "next_res:" + str(res) + "next_fade:" + str(fade_in)
+        pathD = save_directory + "Regular/" + "D/" + "next_res:" + str(res) + "next_fade:" + str(tempF)
+        pathG = save_directory + "Regular/" + "G/" + "next_res:" + str(res) + "next_fade:" + str(tempF)
         torch.save({
             'training': training,
             'next_epoch': epoch,
@@ -766,8 +777,8 @@ def save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG
             
     else:
     
-        pathD = save_directory + "Amp/" + "D/" + str(epoch)
-        pathG = save_directory + "Amp/" + "G/" + str(epoch)
+        pathD = save_directory + "Amp/" + "D/" + "next_res:" + str(res) + "next_fade:" + str(tempF)
+        pathG = save_directory + "Amp/" + "G/" + "next_res:" + str(res) + "next_fade:" + str(tempF)
                
         torch.save({
             'training': training,
@@ -955,8 +966,19 @@ def main(argv):
         check_directories()
         training(load_train = True, mixed_precision=False)
     
-    else:
+    elif arg == -1:
         check_directories()
+    elif arg == -2:
+        def extract_number(f):
+            s = re.findall("\d+",f)
+            print(''.join(s))
+            return (int(''.join(s)) if s else -1,f)
+
+        pathD = save_directory + "Regular/" + "D/"
+        pathG = save_directory + "Regular/" + "G/"
+        list_of_files = glob.glob(pathD + '*') # * means all if need specific format then *.csv
+        latest_file = max(list_of_files,key=extract_number)
+        print(latest_file)
 
 
 
