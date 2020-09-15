@@ -966,19 +966,19 @@ def main(argv):
         check_directories()
         training(load_train = True, mixed_precision=False)
     
-    elif arg == -1:
+    elif arg == 0:
         check_directories()
-    elif arg == -2:
-        def extract_number(f):
-            s = re.findall("\d+",f)
-            print(''.join(s))
-            return (int(''.join(s)) if s else -1,f)
+    # elif arg == -2:
+    #     def extract_number(f):
+    #         s = re.findall("\d+",f)
+    #         print(''.join(s))
+    #         return (int(''.join(s)) if s else -1,f)
 
-        pathD = save_directory + "Regular/" + "D/"
-        pathG = save_directory + "Regular/" + "G/"
-        list_of_files = glob.glob(pathD + '*') # * means all if need specific format then *.csv
-        latest_file = max(list_of_files,key=extract_number)
-        print(latest_file)
+    #     pathD = save_directory + "Regular/" + "D/"
+    #     pathG = save_directory + "Regular/" + "G/"
+    #     list_of_files = glob.glob(pathD + '*') # * means all if need specific format then *.csv
+    #     latest_file = max(list_of_files,key=extract_number)
+    #     print(latest_file)
 
 
 
