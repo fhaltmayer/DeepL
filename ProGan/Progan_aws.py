@@ -610,7 +610,7 @@ def update_running_avg(original, copy):
 def startup(load_train, mixed_precision):
     def extract_number(f):
         s = re.findall("\d+",f)
-        print(''.join(s))
+        # print(''.join(s))
         return (int(''.join(s)) if s else -1,f)
 
     netG = Generator(ngpu).to(device)
