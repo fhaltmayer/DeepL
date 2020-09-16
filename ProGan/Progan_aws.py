@@ -33,7 +33,7 @@ torch.manual_seed(manualSeed)
 # savedirectory: model checkpointing location
 # log_directory: directory where the training log is placed
 # img_directory: training image progress location
-dataroot = "/Data/CelebA/"
+# dataroot = "/Data/CelebA/"
 
 save_directory = "/Data/Training/Saved_Models/"
 
@@ -1026,8 +1026,46 @@ def generate_images(counts, mixed_precision = False):
 
         save_image(img, img_gen_directory + str(x) + ".png" )
 
+generate_video(mixed_precision = False):
+    def extract_number(f):
+        s = re.findall("\d+",f)
+        return (int(''.join(s)) if s else -1,f)
+
+    if mixed_precision:
+        path = img_directory + "Training_Imgs_AMP/"
+
+    else:
+        path = img_directory + "Training_Imgs/"
+
+    for file in os.listdir(path):
+        if file.endswith(".png"):
+            if file.find("False") > 0:
+                print("False")
+                os.rename(os.path.join(path, file), os.path.join(path, file.replace("False", "1")))
+            elif file.find("True") > 0:
+                os.rename(os.path.join(path, file), os.path.join(path, file.replace("True", "0")))
+    
+    for filename in os.listdir(path):
+        prefix, num = filename[:-4].split('step:')
+        num = num.zfill(6)
+        new_filename = prefix + "step:" + num + ".png"
+        os.rename(os.path.join(path , filename), os.path.join(path , new_filename))
+    
+    size = (1200,1200)
+    list_of_files = glob.glob(path + '*.png')
+    list_of_files.sort(key=extract_number)
+    out = cv2.VideoWriter('Timelapse.mp4',cv2.VideoWriter_fourcc(*'mp4v'), 30, size)
+    for filename in list_of_files:
+        img = cv2.imread(filename)
+        out.write(img)
+    out.release()
+    
 
 
+# arg > 0, test if there is gpu space to train each resolution
+# arg = 0: train the network
+# arg = -1: generate images with latest network
+# arg = -2: generate training video
 def main(argv):
     arg = int(argv[0])
     if arg > 0:
@@ -1059,6 +1097,9 @@ def main(argv):
     elif arg == -1:
         check_directories()
         generate_images(50)
+    
+    elif arg == -2:
+        generate_video()
 
 if __name__ == "__main__":
     main(sys.argv[1:])
