@@ -1007,7 +1007,7 @@ def main(argv):
         training(load_train = True, mixed_precision=False)
     
     elif arg == 0:
-        check_directories()
+        training(load_train = True, mixed_precision=False, train_once = True)
     # elif arg == -2:
     #     def extract_number(f):
     #         s = re.findall("\d+",f)
