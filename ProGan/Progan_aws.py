@@ -17,11 +17,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from IPython.display import HTML
-#from apex import amp
 import time
 from copy import deepcopy
 import glob
-# import logging
 import re
 
 
@@ -29,6 +27,11 @@ manualSeed = 999
 random.seed(manualSeed)
 torch.manual_seed(manualSeed)
 
+# These are the directories where you have your data and want to store it.
+# dataroot: location of image folder
+# savedirectory: model checkpointing location
+# log_directory: directory where the training log is placed
+# img_directory: training image progress location
 dataroot = "/Data/CelebA/"
 
 save_directory = "/Data/Training/Saved_Models/"
@@ -37,28 +40,22 @@ log_directory = "/Data/Training/"
 
 img_directory = "/Data/Training/Saved_Imgs/"
 
-
-# dataroot = "/media/fico/Data/Celeba/CelebAMask-HQ"
-
-# save_directory = "./Training/Saved_Models/"
-
-# log_directory = "./Training/"
-
-# img_directory = "./Training/Saved_Imgs/"
-
+# workers: How many threads for data loading
+# nz: the size of the latent space: the larger the less feature loss theoretically
+# lr: learning rate
+# lambda_gp: lambda value for wasserstein loss gradient penalty
+# img_batch_size: (image_res, batch_size) for each resolution of image
+# betas: decay rates for adam
+# steps: how many images per epoch, two epochs per resolution
+# save_count: amount of steps to take before each checkpoint
+# small_penalty_e: epsilon for fourth added loss value
 workers = 4
 
 nz = 512
 
 lr = 0.001
 
-beta1 = 0
-
-ngpu = 1
-
 lambda_gp = 10
-
-d_ratio = 1
 
 img_batch_size = [(4,16),(8,16),(16,16),(32,16),(64,16),(128,16), (256, 14), (512, 6), (1024, 3)]
 
@@ -70,10 +67,12 @@ save_count = 100000
 
 small_penalty_e = .001
 
-device = torch.device("cuda:0" if (torch.cuda.is_available() and ngpu > 0) else "cpu")
+device = torch.device("cuda:0" if (torch.cuda.is_available()) else "cpu")
 
 
-# https://github.com/hukkelas/progan-pytorch/blob/master/src/models/custom_layers.py
+# ref: https://github.com/hukkelas/progan-pytorch/blob/master/src/models/custom_layers.py
+# Pixel norm takes the norm across every feature map, equation given in paper
+
 class PixelNorm(nn.Module):
     def __init__(self):
         super(PixelNorm, self).__init__()
@@ -85,12 +84,13 @@ class PixelNorm(nn.Module):
         div = torch.square(div)
         return x/div
 
+# Minibatch standard deviation takes the mean of the featuremaps across the minibatch and calculates the standard deviaton
+# Small vlue of 10**(-8) to avoid division by zero. Standard deviation is repeated and attached as another channel to the featuremap.
 class MiniBatchSTD(nn.Module):
     def __init__(self):
         super(MiniBatchSTD, self).__init__()
 
     def forward(self, x):
-
         s = x.shape
         std = x
         std = std - torch.mean(std, dim=0, keepdim= True)
@@ -100,9 +100,11 @@ class MiniBatchSTD(nn.Module):
         std = std.to(x.dtype)
         std = std.repeat([s[0], 1, s[2], s[3]])
         std = torch.cat([x, std], 1)
-#         print(std.shape)
         return std
-# https://github.com/akanimax/pro_gan_pytorch/blob/master/pro_gan_pytorch/CustomLayers.py
+
+# ref: https://github.com/akanimax/pro_gan_pytorch/blob/master/pro_gan_pytorch/CustomLayers.py
+# This layer is a convolution layer where the weights are scaled at run time depending on
+# how many parameteres there are as an input to the convolution. It uses he's weight initialization. 
 class conv2d_e(nn.Module):
     def __init__(self, input_c, output_c, kernel, stride, pad):
         super(conv2d_e, self).__init__()
@@ -112,7 +114,6 @@ class conv2d_e(nn.Module):
         self.pad = pad
         fan_in = (kernel*kernel) * input_c
         self.scale = np.sqrt(2) / np.sqrt(fan_in)
-#         print(self.weight.shape)
 
     def forward(self, x):
         return nn.functional.conv2d(input = x, 
@@ -121,7 +122,8 @@ class conv2d_e(nn.Module):
                          bias = self.bias, 
                          padding = self.pad)
         
-
+# This layer is a linear layer where the weights are scaled at run time depending on
+# how many parameteres there are as an input to the convolution. It uses he's weight initialization. 
 class linear_e(nn.Module):
     def __init__(self, input_c, output_c):
         super(linear_e, self).__init__()
@@ -129,20 +131,24 @@ class linear_e(nn.Module):
         self.bias = torch.nn.Parameter(torch.FloatTensor(output_c).fill_(0))
         fan_in = input_c
         self.scale = np.sqrt(2) / np.sqrt(fan_in)
-#         print(self.weight.shape)
 
     def forward(self, x):
         return nn.functional.linear(input = x, 
                          weight = self.weight * self.scale, 
                          bias = self.bias)
 
+
+# The generator structure, this code can be reduced to a Modulelist but that becomes very hard to debug
+# due to logic of pulling certain layers for certain steps. For now, it is kept as a collection of if 
+# statement blocks, each with the commented resolution above each block.
+
 class Generator(nn.Module):
-    def __init__(self, ngpu):
+    def __init__(self):
         super(Generator, self).__init__()
-        self.ngpu = ngpu
-#         self.added = nn.ModuleList([])
+        
         self.up_samp = nn.Upsample(scale_factor = 2)
-#         4
+
+        # 4
         self.start = linear_e(512, 8192)
         self.block = nn.Sequential(
             conv2d_e(nz, 512, 3, 1, 1),
@@ -153,7 +159,7 @@ class Generator(nn.Module):
             PixelNorm(),)
         self.end = conv2d_e(512, 3, 1, 1, 0)
         
-#         8
+        # 8
         self.block1 = nn.Sequential(
             self.up_samp,
             conv2d_e(512, 512, 3, 1, 1),
@@ -164,7 +170,7 @@ class Generator(nn.Module):
             PixelNorm(),) 
         self.end1 = conv2d_e(512, 3, 1, 1, 0)
         
-#         16
+        # 16
         self.block2 = nn.Sequential(
             self.up_samp,
             conv2d_e(512, 512, 3, 1, 1),
@@ -175,7 +181,7 @@ class Generator(nn.Module):
             PixelNorm(),)
         self.end2 = conv2d_e(512, 3, 1, 1, 0)
         
-#         32
+        # 32
         self.block3 = nn.Sequential(
             self.up_samp,
             conv2d_e(512, 512, 3, 1, 1),
@@ -186,7 +192,7 @@ class Generator(nn.Module):
             PixelNorm(),)
         self.end3 = conv2d_e(512, 3, 1, 1, 0)
         
-#         64
+        # 64
         self.block4 = nn.Sequential(
             self.up_samp,
             conv2d_e(512, 256, 3, 1, 1),
@@ -197,7 +203,7 @@ class Generator(nn.Module):
             PixelNorm(),)
         self.end4 = conv2d_e(256, 3, 1, 1, 0)
         
-#          128
+         # 128
         self.block5 = nn.Sequential(
             self.up_samp,
             conv2d_e(256, 128, 3, 1, 1),
@@ -208,7 +214,7 @@ class Generator(nn.Module):
             PixelNorm(),)
         self.end5 = conv2d_e(128, 3, 1, 1, 0)
         
-#          256
+         # 256
         self.block6 = nn.Sequential(
             self.up_samp,
             conv2d_e(128, 64, 3, 1, 1),
@@ -219,7 +225,7 @@ class Generator(nn.Module):
             PixelNorm(),)
         self.end6 = conv2d_e(64, 3, 1, 1, 0)
 
-#          512
+         # 512
         self.block7 = nn.Sequential(
             self.up_samp,
             conv2d_e(64, 32, 3, 1, 1),
@@ -230,7 +236,7 @@ class Generator(nn.Module):
             PixelNorm(),)
         self.end7 = conv2d_e(32, 3, 1, 1, 0)
 
-#          1024
+         # 1024
         self.block8 = nn.Sequential(
             self.up_samp,
             conv2d_e(32, 16, 3, 1, 1),
@@ -241,33 +247,38 @@ class Generator(nn.Module):
             PixelNorm(),)
         self.end8 = conv2d_e(16, 3, 1, 1, 0)
 
-#     Get this down to one if statement logic for fade in
     def forward(self, input, res, alpha):
+        
         input1 = self.start(input)
         input1 = input1.view(-1,512,4,4)
 
         if res == 4:
             output = self.block(input1)
             output = self.end(output)
+
         elif res == 8:
             output = self.block(input1)
             if alpha >= 0:
                 output_old = self.up_samp(output)
                 output_old = self.end(output_old)
+
             output = self.block1(output)
             output = self.end1(output)
             if alpha >= 0:
                 output = alpha*output + (1-alpha)*output_old
+
         elif res == 16:
             output = self.block(input1)
             output = self.block1(output)
             if alpha >= 0:
                 output_old = self.up_samp(output)
                 output_old = self.end1(output_old)
+
             output = self.block2(output)
             output = self.end2(output)
             if alpha >= 0:
                 output = alpha*output + (1-alpha)*output_old
+
         elif res == 32:
             output = self.block(input1)
             output = self.block1(output)
@@ -275,10 +286,12 @@ class Generator(nn.Module):
             if alpha >= 0:
                 output_old = self.up_samp(output)
                 output_old = self.end2(output_old)
+
             output = self.block3(output)
             output = self.end3(output)
             if alpha >= 0:
                 output = alpha*output + (1-alpha)*output_old
+
         elif res == 64:
             output = self.block(input1)
             output = self.block1(output)
@@ -287,10 +300,12 @@ class Generator(nn.Module):
             if alpha >= 0:
                 output_old = self.up_samp(output)
                 output_old = self.end3(output_old)
+
             output = self.block4(output)
             output = self.end4(output)
             if alpha >= 0:
                 output = alpha*output + (1-alpha)*output_old
+
         elif res == 128:
             output = self.block(input1)
             output = self.block1(output)
@@ -300,10 +315,12 @@ class Generator(nn.Module):
             if alpha >= 0:
                 output_old = self.up_samp(output)
                 output_old = self.end4(output_old)
+
             output = self.block5(output)
             output = self.end5(output)
             if alpha >= 0:
                 output = alpha*output + (1-alpha)*output_old
+
         elif res == 256:
             output = self.block(input1)
             output = self.block1(output)
@@ -314,10 +331,12 @@ class Generator(nn.Module):
             if alpha >= 0:
                 output_old = self.up_samp(output)
                 output_old = self.end5(output_old)
+
             output = self.block6(output)
             output = self.end6(output)
             if alpha >= 0:
                 output = alpha*output + (1-alpha)*output_old
+
         elif res == 512:
             output = self.block(input1)
             output = self.block1(output)
@@ -326,10 +345,10 @@ class Generator(nn.Module):
             output = self.block4(output)
             output = self.block5(output)
             output = self.block6(output)
-
             if alpha >= 0:
                 output_old = self.up_samp(output)
                 output_old = self.end6(output_old)
+
             output = self.block7(output)
             output = self.end7(output)
             if alpha >= 0:
@@ -344,28 +363,27 @@ class Generator(nn.Module):
             output = self.block5(output)
             output = self.block6(output)
             output = self.block7(output)
-
             if alpha >= 0:
                 output_old = self.up_samp(output)
                 output_old = self.end7(output_old)
+
             output = self.block8(output)
             output = self.end8(output)
             if alpha >= 0:
                 output = alpha*output + (1-alpha)*output_old
             
-#         print(output.shape) 
         return output
 
+# The discriminator structure, this code can be reduced to a Modulelist but that becomes very hard to debug
+# due to logic of pulling certain layers for certain steps. For now, it is kept as a collection of if 
+# statement blocks, each with the commented resolution above each block.
 
-# Implement batchstdev
 class Discriminator(nn.Module):
-    def __init__(self, ngpu):
+    def __init__(self):
         super(Discriminator, self).__init__()
-        self.ngpu = ngpu
-#         self.added = nn.ModuleList([])
         self.down_samp = nn.AvgPool2d(2)
     
-#         4
+        # 4
         self.block = nn.Sequential(
             MiniBatchSTD(),
             conv2d_e(513, 512, 3, 1, 1),
@@ -376,7 +394,7 @@ class Discriminator(nn.Module):
             linear_e(512, 1))
         self.start = conv2d_e(3, 512, 1, 1, 0)
         
-#         8
+        # 8
         self.block1 = nn.Sequential(
             conv2d_e(512, 512, 3, 1, 1),
             nn.LeakyReLU(.2),
@@ -385,7 +403,7 @@ class Discriminator(nn.Module):
             self.down_samp,)
         self.start1 = conv2d_e(3, 512, 1, 1, 0)
 
-#         16
+        # 16
         self.block2 = nn.Sequential(
             conv2d_e(512, 512, 3, 1, 1),
             nn.LeakyReLU(.2),
@@ -394,7 +412,7 @@ class Discriminator(nn.Module):
             self.down_samp,)
         self.start2 = conv2d_e(3, 512, 1, 1, 0)
         
-#         32
+        # 32
         self.block3 = nn.Sequential(
             conv2d_e(512, 512, 3, 1, 1),
             nn.LeakyReLU(.2),
@@ -403,7 +421,7 @@ class Discriminator(nn.Module):
             self.down_samp,)
         self.start3 = conv2d_e(3, 512, 1, 1, 0)
         
-#         64
+        # 64
         self.block4 = nn.Sequential(
             conv2d_e(256, 256, 3, 1, 1),
             nn.LeakyReLU(.2),
@@ -412,7 +430,7 @@ class Discriminator(nn.Module):
             self.down_samp,)
         self.start4 = conv2d_e(3, 256, 1, 1, 0)
         
-#         128
+        # 128
         self.block5= nn.Sequential(
             conv2d_e(128, 128, 3, 1, 1),
             nn.LeakyReLU(.2),
@@ -421,7 +439,7 @@ class Discriminator(nn.Module):
             self.down_samp,)
         self.start5 = conv2d_e(3, 128, 1, 1, 0)
 
-#         256
+        # 256
         self.block6= nn.Sequential(
             conv2d_e(64, 64, 3, 1, 1),
             nn.LeakyReLU(.2),
@@ -430,7 +448,7 @@ class Discriminator(nn.Module):
             self.down_samp,)
         self.start6 = conv2d_e(3, 64, 1, 1, 0)
 
-#         512
+        # 512
         self.block7= nn.Sequential(
             conv2d_e(32, 32, 3, 1, 1),
             nn.LeakyReLU(.2),
@@ -439,7 +457,7 @@ class Discriminator(nn.Module):
             self.down_samp,)
         self.start7 = conv2d_e(3, 32, 1, 1, 0)
 
-#         1024
+        # 1024
         self.block8= nn.Sequential(
             conv2d_e(16, 16, 3, 1, 1),
             nn.LeakyReLU(.2),
@@ -462,7 +480,6 @@ class Discriminator(nn.Module):
         elif res == 8:
             output = self.start1(input)
             output = self.block1(output)
-            
             if alpha >= 0:
                 output_old = self.down_samp(input)
                 output_old = self.start(output_old)
@@ -473,7 +490,6 @@ class Discriminator(nn.Module):
         elif res == 16:
             output = self.start2(input)
             output = self.block2(output)
-            
             if alpha >= 0:
                 output_old = self.down_samp(input)
                 output_old = self.start1(output_old)
@@ -485,7 +501,6 @@ class Discriminator(nn.Module):
         elif res == 32:
             output = self.start3(input)
             output = self.block3(output)
-            
             if alpha >= 0:
                 output_old = self.down_samp(input)
                 output_old = self.start2(output_old)
@@ -498,7 +513,6 @@ class Discriminator(nn.Module):
         elif res == 64:
             output = self.start4(input)
             output = self.block4(output)
-            
             if alpha >= 0:
                 output_old = self.down_samp(input)
                 output_old = self.start3(output_old)
@@ -512,7 +526,6 @@ class Discriminator(nn.Module):
         elif res == 128:
             output = self.start5(input)
             output = self.block5(output)
-            
             if alpha >= 0:
                 output_old = self.down_samp(input)
                 output_old = self.start4(output_old)
@@ -527,7 +540,6 @@ class Discriminator(nn.Module):
         elif res == 256:
             output = self.start6(input)
             output = self.block6(output)
-            
             if alpha >= 0:
                 output_old = self.down_samp(input)
                 output_old = self.start5(output_old)
@@ -543,7 +555,6 @@ class Discriminator(nn.Module):
         elif res == 512:
             output = self.start7(input)
             output = self.block7(output)
-            
             if alpha >= 0:
                 output_old = self.down_samp(input)
                 output_old = self.start6(output_old)
@@ -560,7 +571,6 @@ class Discriminator(nn.Module):
         elif res == 1024:
             output = self.start8(input)
             output = self.block8(output)
-            
             if alpha >= 0:
                 output_old = self.down_samp(input)
                 output_old = self.start7(output_old)
@@ -575,10 +585,9 @@ class Discriminator(nn.Module):
             output = self.block1(output)
             output = self.block(output)
             
-#         print(output.shape) 
         return output
 
-
+# Creates the data loaders for each resolution before training
 def load_data():
     data_loaders = []
     for img_size, batch_size in img_batch_size:
@@ -596,7 +605,10 @@ def load_data():
     # print("Data Loaded")
     return data_loaders
 
-# https://discuss.pytorch.org/t/copy-weights-only-from-a-networks-parameters/5841
+# ref: https://discuss.pytorch.org/t/copy-weights-only-from-a-networks-parameters/5841
+# Expenential running average for the geneartor, this is used to smooth out the 
+# weights across all the training when generating images, mentioned in paper
+# and really helps with avoiding shading probelems that randomly occur when ending on a training minibatch
 def update_running_avg(original, copy):
     with torch.no_grad(): 
         params1 = original.named_parameters()
@@ -606,15 +618,16 @@ def update_running_avg(original, copy):
             if name1 in dict_params2:
                 dict_params2[name1].data.copy_((1 - .999) * dict_params2[name1] + (.999) * param1.data)
 
-
+# Loading up the latest saved model if load_train is true, if not it sets the values to the default
+# starting values.
 def startup(load_train, mixed_precision):
     def extract_number(f):
         s = re.findall("\d+",f)
         # print(''.join(s))
         return (int(''.join(s)) if s else -1,f)
 
-    netG = Generator(ngpu).to(device)
-    netD = Discriminator(ngpu).to(device)
+    netG = Generator().to(device)
+    netD = Discriminator().to(device)
     netG_copy = deepcopy(netG)
     
     scalerD = -1
@@ -633,19 +646,20 @@ def startup(load_train, mixed_precision):
     count = 0
     
     if load_train:
-    
         if not mixed_precision:
             pathD = save_directory + "Regular/" + "D/"
             pathG = save_directory + "Regular/" + "G/"
+
         else:
             pathD = save_directory + "Amp/" + "D/"
             pathG = save_directory + "Amp/" + "G/"
+
         try:  
-            list_of_files = glob.glob(pathD + '*') # * means all if need specific format then *.csv
+            list_of_files = glob.glob(pathD + '*')
             latest_file = max(list_of_files,key=extract_number)
             checkD = torch.load(latest_file)
 
-            list_of_files = glob.glob(pathG + '*') # * means all if need specific format then *.csv
+            list_of_files = glob.glob(pathG + '*')
             latest_file = max(list_of_files,key=extract_number)
             checkG = torch.load(latest_file)
 
@@ -654,10 +668,10 @@ def startup(load_train, mixed_precision):
             optimizerG.load_state_dict(checkG['optimizer_state_dict'])
             netG.load_state_dict(checkG['model_state_dict'])
             netG_copy.load_state_dict(checkG['copy_model_state_dict'])
-
             if not mixed_precision:
                 scalerD = -1
                 scalerG = -1
+
             else:
                 scalerD = torch.cuda.amp.GradScaler()
                 scalerG = torch.cuda.amp.GradScaler()
@@ -674,24 +688,25 @@ def startup(load_train, mixed_precision):
             with open(log_directory + "log.txt","a+") as f:
                 print(file=f)
                 print("Loaded with epoch: " + str(epoch) + " and count: " + str(count), file=f)
+
         except:
             with open(log_directory + "log.txt","a+") as f:
                 print(file=f)
                 print("Starting new with epoch: " + str(epoch) + " and count: " + str(count), file=f)
 
-
     return [netD, netG, netG_copy, optimizerD, optimizerG, scalerD, scalerG, epoch, res, current_data, fade_in, fixed_noise, training, count]
 
+# Calculations for the gradient penalty taken from wgan-gp. Takes a random interpolation between the generated batch and real image batch and
+# calculates the gradient for that image. Then the norm is taken of that gradient. 
 def gradient_penalty(netD, netG, mini_batch, real_imgs, fake_imgs, alpha, res, mixed_precision):
     gp_alpha = torch.randn(mini_batch, 1, 1, 1, device = device)
     interp = gp_alpha * real_imgs + ((1-gp_alpha) * fake_imgs.detach())
-    interp.requires_grad = True
-            
+    interp.requires_grad = True      
     if mixed_precision:
         pass
+
     else:
         model_interp = netD(interp, alpha = alpha, res = res)
-
 
     if mixed_precision:
         pass
@@ -700,6 +715,7 @@ def gradient_penalty(netD, netG, mini_batch, real_imgs, fake_imgs, alpha, res, m
         grads = torch.autograd.grad(outputs=model_interp, inputs=interp,
                       grad_outputs=torch.ones(model_interp.size()).to(device),
                       create_graph=True, retain_graph=True, only_inputs=True)[0]
+
         grads = torch.square(grads)
         grads = torch.sum(grads, dim = [1,2,3])
         grads = torch.sqrt(grads)
@@ -708,6 +724,7 @@ def gradient_penalty(netD, netG, mini_batch, real_imgs, fake_imgs, alpha, res, m
         grad_pen = grads * lambda_gp
         return grad_pen
 
+# Small penalty attached onto wgan-gp loss specified in paper
 def small_penalty(netD, output_real, mixed_precision = False):
     if mixed_precision:
         pass
@@ -716,6 +733,8 @@ def small_penalty(netD, output_real, mixed_precision = False):
         penalty = penalty * small_penalty_e
     return penalty
 
+# Logging function that prints training log into log.txt and to the console. It also generates 16 samples
+# at the current step and saves them.
 def logging(epoch, res, fade_in, count, alpha, loss_D, loss_G, netG_copy, fixed_noise, mixed_precision):
     with open(log_directory + "log.txt","a+") as f:
         print("Res:", res, "Fade_in:", fade_in, "Iter:",count, "alpha:", alpha, file=f)
@@ -748,9 +767,11 @@ def logging(epoch, res, fade_in, count, alpha, loss_D, loss_G, netG_copy, fixed_
         plt.savefig(path, dpi=300)
         plt.close('all')
 
+# Saving the model and the current point in training for easy resume if there is a crash in training
 def save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision):
     if fade_in == True:
         tempF = 0
+
     else:
         tempF = 1
 
@@ -776,10 +797,8 @@ def save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG
             }, pathG)
             
     else:
-    
         pathD = save_directory + "Amp/" + "D/" + "next_res:" + str(res) + "next_fade:" + str(tempF)
-        pathG = save_directory + "Amp/" + "G/" + "next_res:" + str(res) + "next_fade:" + str(tempF)
-               
+        pathG = save_directory + "Amp/" + "G/" + "next_res:" + str(res) + "next_fade:" + str(tempF) 
         torch.save({
             'training': training,
             'next_epoch': epoch,
@@ -790,7 +809,6 @@ def save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG
             'optimizer_state_dict': optimizerD.state_dict(),
             'scaler_state_dict': scalerD.state_dict(),
             'count': count,
-#                 'amp': amp.state_dict(),
             }, pathD)
 
         torch.save({
@@ -798,11 +816,12 @@ def save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG
             'optimizer_state_dict': optimizerG.state_dict(),
             'fixednoise': fixed_noise,
             'scaler_state_dict': scalerG.state_dict()
-
             }, pathG)
+
     with open(log_directory + "log.txt","a+") as f:
         print("Saved with epoch: " + str(epoch) + " and count: " + str(count), file=f)
 
+# Creating all the necessary directories if they do not exist already
 def check_directories():
     if not os.path.exists(save_directory + "Regular/D/"):
             os.makedirs(save_directory + "Regular/D/")
@@ -817,10 +836,9 @@ def check_directories():
     if not os.path.exists(img_directory + "Training_Imgs/"):
             os.makedirs(img_directory + "Training_Imgs/")
 
-def training(load_train = False, mixed_precision = False):
+# Training loop, 2 epochs per resolution, first one epoch with fading in the new layer, then one without fade
+def training(load_train = False, mixed_precision = False, train_once = False):
     with open(log_directory + "log.txt","a+") as f:
-        # print("Loaded Models", file=f)
-        # print(file=f)
         values = startup(load_train, mixed_precision)
         netD = values[0]
         netG = values[1]
@@ -837,6 +855,15 @@ def training(load_train = False, mixed_precision = False):
         training = values[12]
         count = values[13]
 
+        if train_once == True:
+            epoch -= 1
+            fade_in = !Fade_in
+            if Fade_in == False:
+                res = res /2
+                current_data -= 1
+            count -= 10000
+            training = True
+
         data_loaders = load_data()
         
     while(training):
@@ -845,12 +872,16 @@ def training(load_train = False, mixed_precision = False):
      
         start_time = time.time()
         
+        # Repeating the dataloader if it has been fully read through
         while count < steps:
             try:
                 img = loader.next()
+
             except StopIteration:
                 loader = iter(data_loaders[current_data])
                 img = loader.next()
+
+            # Calculating apha for the current step, -1 if no fading is done
             if not fade_in:
                 alpha = -1
                
@@ -865,31 +896,29 @@ def training(load_train = False, mixed_precision = False):
         
             netD.zero_grad()
             
-#             Discriminator loss on real images
+            # Discriminator loss on real images
             if mixed_precision:
                 pass
             else:
                 output_real = netD(real_imgs, alpha=alpha, res=res).squeeze()
 
             
-#             Discriminator loss on fake images
+            # Discriminator loss on fake images
             if mixed_precision:
                 pass   
             else:
                 fake_imgs = netG(noise, res=res, alpha=alpha)
                 output_fake = netD(fake_imgs.detach(), alpha=alpha, res=res).squeeze()
                 
-                
-                
-#             Gradient Penalty
+            # Gradient Penalty
             grad_pen = gradient_penalty(netD, netG, mini_batch, real_imgs, fake_imgs, alpha, res, mixed_precision)
             
 
-#             Extra small penalty
+            # Extra small penalty
             penalty = small_penalty(netD, output_real, mixed_precision)
                 
 
-#             Calculating entire loss and taking step
+            # Calculating entire loss and taking step
             if mixed_precision:
                 pass
             else:
@@ -899,7 +928,7 @@ def training(load_train = False, mixed_precision = False):
                 
             netG.zero_grad()
             
-#             Generator loss on created batch
+            # Generator loss on its fake batch
             if mixed_precision:
                 pass
             else:
@@ -908,39 +937,46 @@ def training(load_train = False, mixed_precision = False):
                 loss_G.backward()
                 optimizerG.step()
             
+            # Update the running average of generator weights
             update_running_avg(netG, netG_copy)
-
-#             Training Stats
                 
             count += mini_batch
+
+            # Log every 5000 steps
             if count %5000 < mini_batch:
                 logging(epoch, res, fade_in, count, alpha, loss_D, loss_G, netG_copy, fixed_noise, mixed_precision)
+
+            # Save model every save_count, if the resolution is above 64, log even more often due to large slowdown in speed
             if res <= 64:
                 if count%save_count < mini_batch:
                     save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision)
+
             else:
                 if count%(save_count//2) < mini_batch:
                     save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision)
 
-
+        # Update training loop resolution, and if currently fading or not fading in new layer
         if fade_in == False:
             fade_in = True
             current_data += 1
             if current_data == len(data_loaders):
                 training= False
+
             res = res * 2
+
         else:
             fade_in = False
+
         epoch += 1 
-        
         count = 0
-    
+        
+        # Save model after every eoch, 2 epochs per resolution
         save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision)
 
-    
         end_time = time.time()
         epoch_time = end_time - start_time
         print("Epoch time: ", epoch_time)
+
 
 def main(argv):
     arg = int(argv[0])
@@ -955,8 +991,8 @@ def main(argv):
         print(argv[0])
         fixed_noise = torch.randn(16, nz, device=device)
         noise = torch.randn(size, nz, device=device)
-        netG = Generator(ngpu).to(device)
-        netD = Discriminator(ngpu).to(device)
+        netG = Generator().to(device)
+        netD = Discriminator().to(device)
         netG_copy = deepcopy(netG)
         test  = netG(noise, alpha = .5, res = arg)
         test1 = netD(test, alpha = .5, res = arg)
