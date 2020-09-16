@@ -952,7 +952,7 @@ def training(load_train = False, mixed_precision = False, train_once = False):
                     save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision)
 
             else:
-                if count%(save_count//2) < mini_batch:
+                if count%(save_count//4) < mini_batch:
                     save_models(count, epoch, res, current_data, fade_in, netD, optimizerD, netG, netG_copy, optimizerG, fixed_noise, scalerD, scalerG, training, mixed_precision)
 
         # Update training loop resolution, and if currently fading or not fading in new layer
