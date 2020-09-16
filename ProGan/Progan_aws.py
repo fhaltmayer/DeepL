@@ -21,6 +21,7 @@ import time
 from copy import deepcopy
 import glob
 import re
+from torchvision.utils import save_image
 
 
 manualSeed = 999
@@ -39,6 +40,8 @@ save_directory = "/Data/Training/Saved_Models/"
 log_directory = "/Data/Training/"
 
 img_directory = "/Data/Training/Saved_Imgs/"
+
+img_gen_directory = "/Data/Training/End_Gen/"
 
 # workers: How many threads for data loading
 # nz: the size of the latent space: the larger the less feature loss theoretically
@@ -835,9 +838,12 @@ def check_directories():
             os.makedirs(img_directory + "Training_Imgs_AMP/")
     if not os.path.exists(img_directory + "Training_Imgs/"):
             os.makedirs(img_directory + "Training_Imgs/")
+    if not os.path.exists(img_gen_directory):
+            os.makedirs(img_gen_directory)
+    img_gen_directory
 
 # Training loop, 2 epochs per resolution, first one epoch with fading in the new layer, then one without fade
-def training(load_train = False, mixed_precision = False, train_once = False):
+def training(load_train = False, mixed_precision = False):
     with open(log_directory + "log.txt","a+") as f:
         values = startup(load_train, mixed_precision)
         netD = values[0]
@@ -854,16 +860,6 @@ def training(load_train = False, mixed_precision = False, train_once = False):
         fixed_noise = values[11]
         training = values[12]
         count = values[13]
-
-        if train_once == True:
-            epoch -= 1
-            fade_in = !Fade_in
-            if Fade_in == False:
-                res = res /2
-                current_data -= 1
-            count -= 10000
-            training = True
-
         data_loaders = load_data()
         
     while(training):
@@ -977,6 +973,60 @@ def training(load_train = False, mixed_precision = False, train_once = False):
         epoch_time = end_time - start_time
         print("Epoch time: ", epoch_time)
 
+def generate_images(counts, mixed_precision = False):
+    def extract_number(f):
+        s = re.findall("\d+",f)
+        # print(''.join(s))
+        return (int(''.join(s)) if s else -1,f)
+    
+    if not mixed_precision:
+        pathD = save_directory + "Regular/" + "D/"
+        pathG = save_directory + "Regular/" + "G/"
+
+    else:
+        pathD = save_directory + "Amp/" + "D/"
+        pathG = save_directory + "Amp/" + "G/"
+
+     
+    list_of_files = glob.glob(pathD + '*')
+    latest_file = max(list_of_files,key=extract_number)
+    checkD = torch.load(latest_file)
+
+    list_of_files = glob.glob(pathG + '*')
+    latest_file = max(list_of_files,key=extract_number)
+    checkG = torch.load(latest_file)
+
+    netG_copy = Generator().to(device)
+
+    training = checkD['training']
+    epoch = checkD['next_epoch']
+    res = checkD['next_res']
+    current_data = checkD['next_dict']
+    fade_in = checkD['next_fade']
+    fixed_noise = checkG['fixednoise']
+    count = checkD['count']
+    netG_copy.load_state_dict(checkG['copy_model_state_dict'])
+
+    if count == 0 and fade_in == True:
+        res = res/2
+
+    with torch.no_grad():
+        noise = torch.randn(counts, nz, device=device)
+        output = netG_copy(noise, res = res, alpha = -1)
+        print(output.shape)        
+        old_min = torch.min(output)
+        old_max = torch.max(output)
+        old_range = old_max - old_min
+        new_range = 1 - 0
+       
+        output = (((output - old_min)*new_range)/ old_range) + 0
+
+    for x in range(counts):
+        img = output[x]
+
+        save_image(img, img_gen_directory + str(x) + ".png" )
+
+
 
 def main(argv):
     arg = int(argv[0])
@@ -1002,25 +1052,13 @@ def main(argv):
         print("success")
         return 0
     
-    elif arg < 0:
+    elif arg == 0:
         check_directories()
         training(load_train = True, mixed_precision=False)
     
-    elif arg == 0:
-        training(load_train = True, mixed_precision=False, train_once = True)
-    # elif arg == -2:
-    #     def extract_number(f):
-    #         s = re.findall("\d+",f)
-    #         print(''.join(s))
-    #         return (int(''.join(s)) if s else -1,f)
-
-    #     pathD = save_directory + "Regular/" + "D/"
-    #     pathG = save_directory + "Regular/" + "G/"
-    #     list_of_files = glob.glob(pathD + '*') # * means all if need specific format then *.csv
-    #     latest_file = max(list_of_files,key=extract_number)
-    #     print(latest_file)
-
-
+    elif arg == -1:
+        check_directories()
+        generate_images(50)
 
 if __name__ == "__main__":
-   main(sys.argv[1:])
+    main(sys.argv[1:])
