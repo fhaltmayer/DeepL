@@ -24,24 +24,29 @@ import re
 from torchvision.utils import save_image
 
 
-manualSeed = 999
-random.seed(manualSeed)
-torch.manual_seed(manualSeed)
+# Manual Seed is a mistake but I accidentally left it on for my training
+# So certain seeds are way better trained and colored for the example since
+# spot instances were shut down and rerun causing a reloop of the same seeds
+
+# manualSeed = 999
+# random.seed(manualSeed)
+# torch.manual_seed(manualSeed)
 
 # These are the directories where you have your data and want to store it.
 # dataroot: location of image folder
 # savedirectory: model checkpointing location
 # log_directory: directory where the training log is placed
 # img_directory: training image progress location
-# dataroot = "/Data/CelebA/"
 
-save_directory = "/Data/Training/Saved_Models/"
+dataroot = "/media/fico/Data/Celeba/CelebAMask-HQ"
 
-log_directory = "/Data/Training/"
+save_directory = "./Training/Saved_Models/"
 
-img_directory = "/Data/Training/Saved_Imgs/"
+log_directory = "./Training/"
 
-img_gen_directory = "/Data/Training/End_Gen/"
+img_directory = "./Training/Saved_Imgs/"
+
+img_gen_directory = "./Training/End_Gen/"
 
 # workers: How many threads for data loading
 # nz: the size of the latent space: the larger the less feature loss theoretically
@@ -1026,7 +1031,7 @@ def generate_images(counts, mixed_precision = False):
 
         save_image(img, img_gen_directory + str(x) + ".png" )
 
-generate_video(mixed_precision = False):
+def generate_video(mixed_precision = False):
     def extract_number(f):
         s = re.findall("\d+",f)
         return (int(''.join(s)) if s else -1,f)
