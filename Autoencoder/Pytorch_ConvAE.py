@@ -155,7 +155,6 @@ def image_log(real, output):
             plt.imshow(img) 
             count += 1
     plt.show(block=False)
-    plt.savefig("./test.png")
     plt.pause(0.001)
 
 # Training loop
