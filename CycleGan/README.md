@@ -3,7 +3,7 @@ Things to Do
 - [x] Get working
 - [x] Mixed precision
 - [x] Make runnable file
-- [ ] working on larger, randomly sized images
+- [ ] Get working on larger, randomly sized images
 - [ ] Run on aws
 - [ ] Incorporate U-Net Generator
 - [ ] Apply progressive growth to U-net?
