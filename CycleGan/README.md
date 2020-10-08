@@ -1,4 +1,4 @@
-Currently working on Cyclegan, ultimate goal is to see if I can apply progressive growth onto it in order to get better results.
+Pytorch implementation of Cyclegan (https://arxiv.org/pdf/1703.10593.pdf)
 Things to Do
 - [x] Get working
 - [x] Mixed precision
@@ -6,4 +6,4 @@ Things to Do
 - [ ] Get working on larger, randomly sized images
 - [ ] Run on aws
 - [ ] Incorporate U-Net Generator
-- [ ] Apply progressive growth to U-net?
+- [ ] Try to incorporate growth
