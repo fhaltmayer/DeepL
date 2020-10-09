@@ -5,4 +5,3 @@ Things to do:
 
 75% Compression Results
 
-![75% Compression](test.png)
