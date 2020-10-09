@@ -4,5 +4,4 @@ Things to do:
 - [ ] Make clean and runnable TF version
 
 75% Compression Results
-
 ![75% Compression](test.png)
