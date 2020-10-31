@@ -4,12 +4,16 @@ import logging
 from .utils import ensure_tf_type
 
 class ReflectPad(keras.layers.Layer):
-    def __init__(self, pads):
+    def __init__(self, pads, test_c_order = False):
         super(ReflectPad, self).__init__()
         self.pads = pads
+        if test_c_order == False:
+            self.op = [[0, 0], [0, 0], [pads[2], pads[6]], [pads[3], pads[7]]] 
+        else:
+            self.op = [[0, 0], [pads[2], pads[6]], [pads[3], pads[7]], [0, 0]]
 
     def call(self, inputs):
-        x = tf.pad(inputs, [[0, 0], [0, 0], [self.pads[2], self.pads[6]], [self.pads[3], self.pads[7]]], 'REFLECT')
+        x = tf.pad(inputs, self.op, 'REFLECT')
         return x 
     
     def get_config(self):
@@ -20,7 +24,7 @@ class ReflectPad(keras.layers.Layer):
         return config
 
 
-def convert_padding(node, params, layers, lambda_func, node_name, keras_name):
+def convert_padding(node, params, layers, lambda_func, node_name, keras_name, test_c_order = False):
     """
     Convert Constant layer
     :param node: current operation node
@@ -76,7 +80,7 @@ def convert_padding(node, params, layers, lambda_func, node_name, keras_name):
 
         # lambda_layer = keras.layers.Lambda(target_layer, name=keras_name)
         # layers[node_name] = lambda_layer(input_0)
-        layer = ReflectPad(pads)
+        layer = ReflectPad(pads , test_c_order)
         layers[node_name] = layer(input_0)
         # lambda_func[keras_name] = target_layer
     elif params['mode'] == 'edge':

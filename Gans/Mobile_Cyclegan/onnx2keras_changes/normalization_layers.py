@@ -5,7 +5,26 @@ import tensorflow as tf
 from keras import backend as K
 import tensorflow_addons as tfa
 
-def convert_batchnorm(node, params, layers, lambda_func, node_name, keras_name):
+# class InstanceNorm(keras.layers.Layer):
+#     def __init__(self, axis, epsilon, test_c_order = False):
+#         super(InstanceNorm, self).__init__()
+#         self.axis = axis
+#         self.epsilon = epsilon
+
+#     def call(self, inputs):
+#         mean = tf.reduce_mean(inputs, axis = self.axis, keepdims = True)
+#         var = tf.reduce_mean(tf.square()
+#         return x 
+    
+#     def get_config(self):
+#         config = super().get_config().copy()
+#         config.update({
+#             'pads': self.pads
+#         })
+#         return config
+
+
+def convert_batchnorm(node, params, layers, lambda_func, node_name, keras_name, test_c_order = False):
     """
     Convert BatchNorm2d layer
     :param node: current operation node
@@ -56,7 +75,7 @@ def convert_batchnorm(node, params, layers, lambda_func, node_name, keras_name):
     layers[node_name] = bn(input_0)
 
 
-def convert_instancenorm(node, params, layers, lambda_func, node_name, keras_name):
+def convert_instancenorm(node, params, layers, lambda_func, node_name, keras_name, test_c_order = False):
     """
     Convert InstanceNorm2d layer
     :param node: current operation node
@@ -89,7 +108,7 @@ def convert_instancenorm(node, params, layers, lambda_func, node_name, keras_nam
     # lambda_layer = keras.layers.Lambda(target_layer, name=keras_name)
     # lambda_func[keras_name] = target_layer
     data_format = 'NCHW' if K.image_data_format() == 'channels_first' else 'NHWC'
-    if data_format == "NCHW":
+    if test_c_order == False:
         lambda_layer = tfa.layers.InstanceNormalization(axis=1, 
                                             epsilon=params['epsilon'], 
                                             center=False, 
@@ -103,7 +122,7 @@ def convert_instancenorm(node, params, layers, lambda_func, node_name, keras_nam
     layers[node_name] = lambda_layer(input_0)
 
 
-def convert_dropout(node, params, layers, lambda_func, node_name, keras_name):
+def convert_dropout(node, params, layers, lambda_func, node_name, keras_name, test_c_order = False):
     """
     Convert Dropout layer
     :param node: current operation node
@@ -127,7 +146,7 @@ def convert_dropout(node, params, layers, lambda_func, node_name, keras_name):
     layers[node_name] = lambda_layer(input_0)
 
 
-def convert_lrn(node, params, layers, lambda_func, node_name, keras_name):
+def convert_lrn(node, params, layers, lambda_func, node_name, keras_name, test_c_order = False):
     """
     Convert LRN layer
     :param node: current operation node

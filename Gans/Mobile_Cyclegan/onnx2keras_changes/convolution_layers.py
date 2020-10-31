@@ -4,7 +4,7 @@ from .utils import ensure_tf_type, ensure_numpy_type
 
 
 
-def convert_conv(node, params, layers, lambda_func, node_name, keras_name):
+def convert_conv(node, params, layers, lambda_func, node_name, keras_name, test_c_order = False):
     """
     Convert convolution layer
     :param node: current operation node
@@ -82,27 +82,37 @@ def convert_conv(node, params, layers, lambda_func, node_name, keras_name):
             padding = ((pads[0], pads[2]), (pads[1], pads[3]))
 
         if padding:
+            if test_c_order: 
+                data_form = "channels_last"
+            else:
+                data_form = "channels_first"
             logger.debug('Paddings exist, add ZeroPadding layer')
             padding_name = keras_name + '_pad'
             padding_layer = keras.layers.ZeroPadding2D(
                 padding=padding,
                 name=padding_name,
-                data_format='channels_first'
+                data_format=data_form
             )
             layers[padding_name] = input_0 = padding_layer(input_0)
-
         W = W.transpose(2, 3, 1, 0)
+
         height, width, channels_per_group, out_channels = W.shape
         in_channels = channels_per_group * n_groups
 
         if n_groups == in_channels and n_groups != 1:
+            
+            # from tensorflow.keras import backend as K
+            # print(K.image_data_format())
             logger.debug('Number of groups is equal to input channels, use DepthWise convolution')
             W = W.transpose(0, 1, 3, 2)
             if has_bias:
                 weights = [W, bias]
             else:
                 weights = [W]
-
+            if test_c_order: 
+                data_form = "channels_last"
+            else:
+                data_form = "channels_first"
             conv = keras.layers.DepthwiseConv2D(
                 kernel_size=(height, width),
                 strides=(strides[0], strides[1]),
@@ -113,7 +123,8 @@ def convert_conv(node, params, layers, lambda_func, node_name, keras_name):
                 weights=weights,
                 dilation_rate=dilation,
                 bias_initializer='zeros', kernel_initializer='zeros',
-                name=keras_name
+                name=keras_name,
+                data_format = data_form
             )
             layers[node_name] = conv(input_0)
 
@@ -156,10 +167,17 @@ def convert_conv(node, params, layers, lambda_func, node_name, keras_name):
             layers[node_name] = lambda_layer(input_0)
 
         else:
+            print("-"*20)
+            print("IGOTHERE")
             if has_bias:
                 weights = [W, bias]
             else:
                 weights = [W]
+
+            if test_c_order: 
+                data_form = "channels_last"
+            else:
+                data_form = "channels_first"
 
             conv = keras.layers.Conv2D(
                 filters=out_channels,
@@ -171,7 +189,8 @@ def convert_conv(node, params, layers, lambda_func, node_name, keras_name):
                 activation=None,
                 dilation_rate=dilation,
                 bias_initializer='zeros', kernel_initializer='zeros',
-                name=keras_name
+                name=keras_name,
+                data_format = data_form
             )
 
             layers[node_name] = conv(input_0)
@@ -222,7 +241,7 @@ def convert_conv(node, params, layers, lambda_func, node_name, keras_name):
 
 
 def convert_convtranspose(node, params, layers,
-                          lambda_func, node_name, keras_name):
+                          lambda_func, node_name, keras_name, test_c_order = False):
     """
     Convert transposed convolution layer
     :param node: current operation node
@@ -233,6 +252,11 @@ def convert_convtranspose(node, params, layers,
     :param keras_name: resulting layer name
     :return: None
     """
+    if test_c_order: 
+        data_form = "channels_last"
+    else:
+        data_form = "channels_first"
+
     logger = logging.getLogger('onnx2keras:convtranpose')
 
     if len(node.input) == 3:
@@ -286,7 +310,8 @@ def convert_convtranspose(node, params, layers,
             activation=None,
             dilation_rate=dilation,
             bias_initializer='zeros', kernel_initializer='zeros',
-            name=keras_name
+            name=keras_name,
+            data_format = data_form
         )
 
         if 'output_shape' in params and 'pads' not in params:
