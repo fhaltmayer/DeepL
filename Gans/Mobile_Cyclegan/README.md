@@ -3,3 +3,5 @@ This is my attempt on getting a heavily compressed cyclegan model on to CoreML a
 --Update: Managed to get onnx2keras working wtih a few changes to InstanceNorm, ReflectionPad, and Convolution2dTranspose. Issue with tflite due to Channels first causing a bad graph. TFlite interpretor also seg faults which is worrisome.
 
 --Update 2: For some reason tflite cannot convert the tf.math.Pow operator which is found when calculating the bias and variance in Square_dif which is used in tensorflow_light's instance norm. In order to get around this you can go to the tf/python/ops/nn_impl.py and change the squared_diff into a manual (x-y)(x-y). Ive included the changed file. Ive managed to produce a float16 quantized model and regular model in tflite. Next step is getting it working on swift. 
+
+--Update 3: CoreML is not the route to go, many issues regarding conversion and dealing with RGB, BGR, channel order, etc. Next step is to try tflite model which I know works as I have been able to test the interpreter. 
